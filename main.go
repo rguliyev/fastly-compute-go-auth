@@ -18,7 +18,7 @@ import (
 
 	"compute-go-auth/config"
 	"compute-go-auth/cookie"
-	"compute-go-auth/debug"
+	"compute-go-auth/log"
 
 	"github.com/fastly/compute-sdk-go/fsthttp"
 	"github.com/golang-jwt/jwt/v5"
@@ -109,26 +109,20 @@ func generateRandomStr(length int) string {
 
 // getJWK retrieves a JWK from the JWKS
 func getJWK(jwks *config.JWKS, kid string) (*config.JWK, error) {
-	if debug.LOG {
-		fmt.Fprintf(os.Stdout, "Looking for JWK with kid: %s\n", kid)
-		fmt.Fprintf(os.Stdout, "Available JWKs: %d\n", len(jwks.Keys))
-		for i, key := range jwks.Keys {
-			fmt.Fprintf(os.Stdout, "  JWK %d: kid=%s, kty=%s, use=%s\n", i, key.Kid, key.Kty, key.Use)
-		}
+	log.Debug("Looking for JWK with kid: %s", kid)
+	log.Debug("Available JWKs: %d", len(jwks.Keys))
+	for i, key := range jwks.Keys {
+		log.Debug("  JWK %d: kid=%s, kty=%s, use=%s", i, key.Kid, key.Kty, key.Use)
 	}
 
 	for _, key := range jwks.Keys {
 		if key.Kid == kid {
-			if debug.LOG {
-				fmt.Fprintf(os.Stdout, "Found matching JWK for kid: %s\n", kid)
-			}
+			log.Debug("Found matching JWK for kid: %s", kid)
 			return &key, nil
 		}
 	}
 
-	if debug.LOG {
-		fmt.Fprintf(os.Stderr, "No matching JWK found for kid: %s\n", kid)
-	}
+	log.Error("No matching JWK found for kid: %s", kid)
 	return nil, fmt.Errorf("no matching JWK found for identifier %s", kid)
 }
 
@@ -184,9 +178,7 @@ func validateJWT(jwks *config.JWKS, tokenString string, options *JWTValidationOp
 		return fmt.Errorf("failed to parse JWT header: %w", err)
 	}
 
-	if debug.LOG {
-		fmt.Fprintf(os.Stdout, "JWT validation - kid: %s, alg: %s\n", header.Kid, header.Alg)
-	}
+	log.Debug("JWT validation - kid: %s, alg: %s", header.Kid, header.Alg)
 
 	// Retrieve the public key matching the key ID
 	jwk, err := getJWK(jwks, header.Kid)
@@ -194,9 +186,7 @@ func validateJWT(jwks *config.JWKS, tokenString string, options *JWTValidationOp
 		return fmt.Errorf("failed to get JWK: %w", err)
 	}
 
-	if debug.LOG {
-		fmt.Fprintf(os.Stdout, "Found JWK for kid: %s\n", header.Kid)
-	}
+	log.Debug("Found JWK for kid: %s", header.Kid)
 
 	// Convert JWK to RSA public key
 	publicKey, err := jwkToRSAPublicKey(jwk)
@@ -204,9 +194,7 @@ func validateJWT(jwks *config.JWKS, tokenString string, options *JWTValidationOp
 		return fmt.Errorf("failed to convert JWK to RSA public key: %w", err)
 	}
 
-	if debug.LOG {
-		fmt.Fprintf(os.Stdout, "Converted JWK to RSA public key successfully\n")
-	}
+	log.Debug("Converted JWK to RSA public key successfully")
 
 	// Parse and validate the token
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
@@ -218,22 +206,16 @@ func validateJWT(jwks *config.JWKS, tokenString string, options *JWTValidationOp
 	})
 
 	if err != nil {
-		if debug.LOG {
-			fmt.Fprintf(os.Stderr, "JWT parsing failed: %v\n", err)
-		}
+		log.Error("JWT parsing failed: %v", err)
 		return fmt.Errorf("failed to parse JWT: %w", err)
 	}
 
 	if !token.Valid {
-		if debug.LOG {
-			fmt.Fprintf(os.Stderr, "JWT is not valid\n")
-		}
+		log.Error("JWT is not valid")
 		return fmt.Errorf("invalid JWT")
 	}
 
-	if debug.LOG {
-		fmt.Fprintf(os.Stdout, "JWT signature validation successful\n")
-	}
+	log.Debug("JWT signature validation successful")
 
 	// Verify claims
 	claims, ok := token.Claims.(jwt.MapClaims)
@@ -241,34 +223,24 @@ func validateJWT(jwks *config.JWKS, tokenString string, options *JWTValidationOp
 		return fmt.Errorf("invalid JWT claims")
 	}
 
-	if debug.LOG {
-		fmt.Fprintf(os.Stdout, "JWT claims: %+v\n", claims)
-	}
+	log.Debug("JWT claims: %+v", claims)
 
 	// Verify issuer if provided
 	if options.Issuer != "" {
 		if iss, ok := claims["iss"].(string); !ok || iss != options.Issuer {
-			if debug.LOG {
-				fmt.Fprintf(os.Stderr, "Issuer mismatch - expected: %s, got: %s\n", options.Issuer, iss)
-			}
+			log.Error("Issuer mismatch - expected: %s, got: %s", options.Issuer, iss)
 			return fmt.Errorf("invalid issuer")
 		}
-		if debug.LOG {
-			fmt.Fprintf(os.Stdout, "Issuer validation successful\n")
-		}
+		log.Debug("Issuer validation successful")
 	}
 
 	// Verify audience if provided
 	if options.Audience != "" {
 		if aud, ok := claims["aud"].(string); !ok || aud != options.Audience {
-			if debug.LOG {
-				fmt.Fprintf(os.Stderr, "Audience mismatch - expected: %s, got: %s\n", options.Audience, aud)
-			}
+			log.Error("Audience mismatch - expected: %s, got: %s", options.Audience, aud)
 			return fmt.Errorf("invalid audience")
 		}
-		if debug.LOG {
-			fmt.Fprintf(os.Stdout, "Audience validation successful\n")
-		}
+		log.Debug("Audience validation successful")
 	}
 
 	return nil
@@ -356,10 +328,10 @@ func clearAllCookies(w fsthttp.ResponseWriter) {
 // 6. Subsequent requests use tokens for authentication
 func main() {
 
-	debug.LOG = DEBUG
+	log.DebugEnabled = DEBUG
 
 	// Log service version for debugging and monitoring
-	fmt.Fprintln(os.Stdout, "FASTLY_SERVICE_VERSION:", os.Getenv("FASTLY_SERVICE_VERSION"))
+	log.Info("FASTLY_SERVICE_VERSION: %s", os.Getenv("FASTLY_SERVICE_VERSION"))
 
 	// Register the main request handler with Fastly
 	fsthttp.ServeFunc(func(ctx context.Context, w fsthttp.ResponseWriter, r *fsthttp.Request) {
@@ -373,7 +345,7 @@ func handleRequest(ctx context.Context, w fsthttp.ResponseWriter, r *fsthttp.Req
 	// Load OAuth configuration from environment variables or Fastly Secret Store
 	settings, err := config.LoadConfig()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to load config:", err)
+		log.Error("Failed to load config: %v", err)
 		w.WriteHeader(fsthttp.StatusInternalServerError)
 		fmt.Fprintln(w, "Configuration error")
 		return
@@ -383,35 +355,31 @@ func handleRequest(ctx context.Context, w fsthttp.ResponseWriter, r *fsthttp.Req
 	cookies := cookie.Parse(r.Header.Get("Cookie"))
 
 	// Debug logging for cookie parsing
-	if debug.LOG {
-		fmt.Fprintf(os.Stdout, "Request path: %s, cookies parsed - access_token: %s, id_token: %s, state: %s, code_verifier: %s\n",
-			r.URL.Path,
-			func() string {
-				if cookies.AccessToken != "" {
-					return cookies.AccessToken[:10] + "..."
-				} else {
-					return "empty"
-				}
-			}(),
-			func() string {
-				if cookies.IDToken != "" {
-					return cookies.IDToken[:10] + "..."
-				} else {
-					return "empty"
-				}
-			}(),
-			cookies.State,
-			cookies.CodeVerifier)
-	}
+	log.Debug("Request path: %s, cookies parsed - access_token: %s, id_token: %s, state: %s, code_verifier: %s",
+		r.URL.Path,
+		func() string {
+			if cookies.AccessToken != "" {
+				return cookies.AccessToken[:10] + "..."
+			} else {
+				return "empty"
+			}
+		}(),
+		func() string {
+			if cookies.IDToken != "" {
+				return cookies.IDToken[:10] + "..."
+			} else {
+				return "empty"
+			}
+		}(),
+		cookies.State,
+		cookies.CodeVerifier)
 
 	// Build the OAuth 2.0 redirect URI for the callback
 	// This must match exactly what's registered in the OAuth provider
 	redirectURI := fmt.Sprintf("%s://%s%s", r.URL.Scheme, r.URL.Host, settings.Config.CallbackPath)
 
 	// Debug logging
-	if debug.LOG {
-		fmt.Fprintf(os.Stdout, "redirectURI: %s\n", redirectURI)
-	}
+	log.Debug("redirectURI: %s", redirectURI)
 
 	// Handle OAuth callback from the identity provider
 	if strings.HasPrefix(r.URL.Path, settings.Config.CallbackPath) {
@@ -421,17 +389,13 @@ func handleRequest(ctx context.Context, w fsthttp.ResponseWriter, r *fsthttp.Req
 
 	// Check if user is already authenticated by looking for valid tokens
 	if cookies.AccessToken != "" && cookies.IDToken != "" {
-		if debug.LOG {
-			fmt.Fprintf(os.Stdout, "Found access_token and id_token cookies, attempting authenticated request\n")
-		}
+		log.Debug("Found access_token and id_token cookies, attempting authenticated request")
 		// Try to handle as authenticated request
 		if handleAuthenticatedRequest(ctx, w, r, settings, cookies) {
 			return
 		}
 	} else {
-		if debug.LOG {
-			fmt.Fprintf(os.Stdout, "No access_token or id_token cookies found, starting OAuth flow\n")
-		}
+		log.Debug("No access_token or id_token cookies found, starting OAuth flow")
 	}
 
 	// If not authenticated, start the OAuth 2.0 authorization code flow
@@ -443,14 +407,12 @@ func handleRequest(ctx context.Context, w fsthttp.ResponseWriter, r *fsthttp.Req
 // and redirects the user back to their original request
 func handleCallback(ctx context.Context, w fsthttp.ResponseWriter, r *fsthttp.Request, settings *config.Settings, cookies *cookie.Cookies, redirectURI string) {
 	// Debug logging
-	if debug.LOG {
-		fmt.Fprintf(os.Stdout, "Callback received - cookies: state=%s, code_verifier=%s\n", cookies.State, cookies.CodeVerifier)
-	}
+	log.Debug("Callback received - cookies: state=%s, code_verifier=%s", cookies.State, cookies.CodeVerifier)
 
 	// Verify that we have the required cookies from the OAuth initiation
 	// These cookies contain the state and code_verifier needed for security
 	if cookies.State == "" || cookies.CodeVerifier == "" {
-		fmt.Fprintln(os.Stderr, "State or code_verifier cookies not found")
+		log.Error("State or code_verifier cookies not found")
 		// Return 401 Unauthorized with expired cookies
 		w.WriteHeader(fsthttp.StatusUnauthorized)
 		fmt.Fprintln(w, "State cookies not found.")
@@ -463,15 +425,13 @@ func handleCallback(ctx context.Context, w fsthttp.ResponseWriter, r *fsthttp.Re
 	code := qs.Get("code")   // Authorization code to exchange for tokens
 	state := qs.Get("state") // State parameter to prevent CSRF attacks
 
-	if debug.LOG {
-		fmt.Fprintf(os.Stdout, "Callback params - code=%s, state=%s\n", code, state)
-	}
+	log.Debug("Callback params - code=%s, state=%s", code, state)
 
 	// Validate the state JWT returned by the identity provider
 	// This prevents CSRF attacks by ensuring the state matches what we sent
 	claimedState, err := getClaimedState(settings.Config.NonceSecret, state)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Could not verify state:", err)
+		log.Error("Could not verify state: %v", err)
 		// Return 401 Unauthorized with expired cookies
 		w.WriteHeader(fsthttp.StatusUnauthorized)
 		fmt.Fprintln(w, "Could not verify state.")
@@ -479,13 +439,11 @@ func handleCallback(ctx context.Context, w fsthttp.ResponseWriter, r *fsthttp.Re
 		return
 	}
 
-	if debug.LOG {
-		fmt.Fprintf(os.Stdout, "Claimed state: %s, stored state: %s\n", claimedState, cookies.State)
-	}
+	log.Debug("Claimed state: %s, stored state: %s", claimedState, cookies.State)
 
 	// Ensure the claimed state matches our stored state
 	if claimedState != cookies.State {
-		fmt.Fprintln(os.Stderr, "State mismatch")
+		log.Error("State mismatch")
 		// Return 401 Unauthorized with expired cookies
 		w.WriteHeader(fsthttp.StatusUnauthorized)
 		fmt.Fprintln(w, "State mismatch.")
@@ -497,7 +455,7 @@ func handleCallback(ctx context.Context, w fsthttp.ResponseWriter, r *fsthttp.Re
 	// This is the core of the OAuth 2.0 authorization code flow
 	exchangeRes, err := exchangeCodeForTokens(ctx, settings, code, cookies.CodeVerifier, redirectURI)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Token exchange failed:", err)
+		log.Error("Token exchange failed: %v", err)
 		// Return 401 Unauthorized with expired cookies
 		w.WriteHeader(fsthttp.StatusUnauthorized)
 		fmt.Fprintln(w, "Token exchange failed.")
@@ -506,7 +464,7 @@ func handleCallback(ctx context.Context, w fsthttp.ResponseWriter, r *fsthttp.Re
 	}
 
 	if !exchangeRes.OK {
-		fmt.Fprintf(os.Stderr, "Token exchange error: %s\n", exchangeRes.Error)
+		log.Error("Token exchange error: %s", exchangeRes.Error)
 		// Return 401 Unauthorized with expired cookies
 		w.WriteHeader(fsthttp.StatusUnauthorized)
 		fmt.Fprintln(w, exchangeRes.Error)
@@ -517,9 +475,7 @@ func handleCallback(ctx context.Context, w fsthttp.ResponseWriter, r *fsthttp.Re
 	// Extract the original request path from the state cookie
 	// The state contains the original path + random string for security
 	originalReqPath := cookies.State[:len(cookies.State)-settings.Config.StateParameterLength]
-	if debug.LOG {
-		fmt.Fprintf(os.Stdout, "Original request path: %s\n", originalReqPath)
-	}
+	log.Debug("Original request path: %s", originalReqPath)
 
 	// Redirect back to the original request with the new tokens set as cookies
 	// Set cookies BEFORE writing headers
@@ -537,28 +493,22 @@ func handleCallback(ctx context.Context, w fsthttp.ResponseWriter, r *fsthttp.Re
 // handleAuthenticatedRequest processes requests from authenticated users
 // It validates the access and ID tokens, then forwards the request to the origin backend
 func handleAuthenticatedRequest(ctx context.Context, w fsthttp.ResponseWriter, r *fsthttp.Request, settings *config.Settings, cookies *cookie.Cookies) bool {
-	if debug.LOG {
-		fmt.Fprintf(os.Stdout, "Handling authenticated request - access_token: %s, id_token: %s\n",
-			cookies.AccessToken[:10]+"...", cookies.IDToken[:10]+"...")
-	}
+	log.Debug("Handling authenticated request - access_token: %s, id_token: %s",
+		cookies.AccessToken[:10]+"...", cookies.IDToken[:10]+"...")
 
 	// Validate the access token if introspection is enabled
 	if settings.Config.IntrospectAccessToken {
 		// Validate access token by calling the introspection endpoint
 		userInfo, err := fetchUserInfo(ctx, settings, cookies.AccessToken)
 		if err != nil || !userInfo.OK {
-			if debug.LOG {
-				fmt.Fprintf(os.Stdout, "Access token validation failed\n")
-			}
+			log.Error("Access token validation failed")
 			// Return 401 Unauthorized with expired cookies
 			w.WriteHeader(fsthttp.StatusUnauthorized)
 			fmt.Fprintln(w, "Access token validation failed.")
 			clearAllCookies(w)
 			return false
 		}
-		if debug.LOG {
-			fmt.Fprintf(os.Stdout, "Access token validation successful\n")
-		}
+		log.Debug("Access token validation successful")
 	} else if settings.Config.JWTAccessToken {
 		// Validate JWT access token locally using JWKS
 		err := validateJWT(settings.JWKS, cookies.AccessToken, &JWTValidationOptions{
@@ -566,47 +516,35 @@ func handleAuthenticatedRequest(ctx context.Context, w fsthttp.ResponseWriter, r
 			Audience: settings.Config.ClientID,
 		})
 		if err != nil {
-			if debug.LOG {
-				fmt.Fprintf(os.Stdout, "Access token invalid\n")
-			}
+			log.Error("Access token invalid")
 			// Return 401 Unauthorized with expired cookies
 			w.WriteHeader(fsthttp.StatusUnauthorized)
 			fmt.Fprintln(w, "Access token invalid.")
 			clearAllCookies(w)
 			return false
 		}
-		if debug.LOG {
-			fmt.Fprintf(os.Stdout, "JWT access token validation successful\n")
-		}
+		log.Debug("JWT access token validation successful")
 	}
 
 	// Validate the ID token (JWT) using the provider's public keys
-	if debug.LOG {
-		fmt.Fprintf(os.Stdout, "Validating ID token with issuer: %s, audience: %s\n",
-			settings.OpenIDConfiguration.Issuer, settings.Config.ClientID)
-	}
+	log.Debug("Validating ID token with issuer: %s, audience: %s",
+		settings.OpenIDConfiguration.Issuer, settings.Config.ClientID)
 	err := validateJWT(settings.JWKS, cookies.IDToken, &JWTValidationOptions{
 		Issuer:   settings.OpenIDConfiguration.Issuer,
 		Audience: settings.Config.ClientID,
 	})
 	if err != nil {
-		if debug.LOG {
-			fmt.Fprintf(os.Stdout, "ID token invalid\n")
-		}
+		log.Error("ID token invalid")
 		// Return 401 Unauthorized with expired cookies
 		w.WriteHeader(fsthttp.StatusUnauthorized)
 		fmt.Fprintln(w, "ID token invalid.")
 		clearAllCookies(w)
 		return false
 	}
-	if debug.LOG {
-		fmt.Fprintf(os.Stdout, "ID token validation successful\n")
-	}
+	log.Debug("ID token validation successful")
 
 	// Authentication successful! Forward the request to the origin backend
-	if debug.LOG {
-		fmt.Fprintf(os.Stdout, "Authentication successful, forwarding to origin\n")
-	}
+	log.Debug("Authentication successful, forwarding to origin")
 
 	// Add authentication headers for the origin backend
 	if settings.Config.APIKey != "" {
@@ -618,7 +556,7 @@ func handleAuthenticatedRequest(ctx context.Context, w fsthttp.ResponseWriter, r
 	// Forward the request to the origin backend
 	resp, err := r.Send(ctx, "origin")
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Origin request failed:", err)
+		log.Error("Origin request failed: %v", err)
 		w.WriteHeader(fsthttp.StatusBadGateway)
 		fmt.Fprintln(w, "Origin request failed")
 		return false
@@ -657,7 +595,7 @@ func startOAuthFlow(ctx context.Context, w fsthttp.ResponseWriter, r *fsthttp.Re
 	// This prevents authorization code interception attacks
 	pkceData, err := generatePKCEChallenge()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to generate PKCE challenge:", err)
+		log.Error("Failed to generate PKCE challenge: %v", err)
 		w.WriteHeader(fsthttp.StatusInternalServerError)
 		fmt.Fprintln(w, "PKCE generation failed")
 		return
@@ -676,7 +614,7 @@ func startOAuthFlow(ctx context.Context, w fsthttp.ResponseWriter, r *fsthttp.Re
 	// The nonce is embedded in the state JWT for security
 	stateAndNonce, nonce, err := generateNonceFromState(settings.Config.NonceSecret, state)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to generate nonce:", err)
+		log.Error("Failed to generate nonce: %v", err)
 		w.WriteHeader(fsthttp.StatusInternalServerError)
 		fmt.Fprintln(w, "Nonce generation failed")
 		return
@@ -685,7 +623,7 @@ func startOAuthFlow(ctx context.Context, w fsthttp.ResponseWriter, r *fsthttp.Re
 	// Build the authorization request URL for the identity provider
 	authReqURL, err := url.Parse(settings.OpenIDConfiguration.AuthorizationEndpoint)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Invalid authorization endpoint:", err)
+		log.Error("Invalid authorization endpoint: %v", err)
 		w.WriteHeader(fsthttp.StatusInternalServerError)
 		fmt.Fprintln(w, "Configuration error")
 		return
@@ -704,11 +642,9 @@ func startOAuthFlow(ctx context.Context, w fsthttp.ResponseWriter, r *fsthttp.Re
 	authReqURL.RawQuery = q.Encode()
 
 	// Debug logging
-	if debug.LOG {
-		fmt.Fprintf(os.Stdout, "Starting OAuth flow - redirect_uri: %s\n", redirectURI)
-		fmt.Fprintf(os.Stdout, "Setting cookies - state: %s, code_verifier: %s\n", state, pkceData.CodeVerifier)
-		fmt.Fprintf(os.Stdout, "Authorization URL: %s\n", authReqURL.String())
-	}
+	log.Debug("Starting OAuth flow - redirect_uri: %s", redirectURI)
+	log.Debug("Setting cookies - state: %s, code_verifier: %s", state, pkceData.CodeVerifier)
+	log.Debug("Authorization URL: %s", authReqURL.String())
 
 	// Set security cookies before redirecting
 	// These cookies contain the state and code_verifier needed for the callback
@@ -736,17 +672,15 @@ func exchangeCodeForTokens(ctx context.Context, settings *config.Settings, code,
 	data.Set("redirect_uri", redirectURI) // Must match the authorization request
 
 	// Debug logging (redact sensitive data)
-	if debug.LOG {
-		fmt.Fprintf(os.Stdout, "Token exchange - client_id: %s, redirect_uri: %s, code_verifier: %s\n",
-			settings.Config.ClientID, redirectURI, codeVerifier)
-		fmt.Fprintf(os.Stdout, "Token endpoint: %s\n", settings.OpenIDConfiguration.TokenEndpoint)
-		fmt.Fprintf(os.Stdout, "Request body: %s\n", data.Encode())
-	}
+	log.Debug("Token exchange - client_id: %s, redirect_uri: %s, code_verifier: %s",
+		settings.Config.ClientID, redirectURI, codeVerifier)
+	log.Debug("Token endpoint: %s", settings.OpenIDConfiguration.TokenEndpoint)
+	log.Debug("Request body: %s", data.Encode())
 
 	// Create and send the token exchange request
 	req, err := fsthttp.NewRequest("POST", settings.OpenIDConfiguration.TokenEndpoint, strings.NewReader(data.Encode()))
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to create token exchange request: %v\n", err)
+		log.Error("Failed to create token exchange request: %v", err)
 		return nil, err
 	}
 
@@ -755,15 +689,13 @@ func exchangeCodeForTokens(ctx context.Context, settings *config.Settings, code,
 	// Send request to the identity provider's token endpoint
 	resp, err := req.Send(ctx, "idp")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to send token exchange request: %v\n", err)
+		log.Error("Failed to send token exchange request: %v", err)
 		return nil, err
 	}
 	defer resp.Body.Close()
 
-	if debug.LOG {
-		fmt.Fprintf(os.Stdout, "Token exchange response status: %d\n", resp.StatusCode)
-		fmt.Fprintf(os.Stdout, "Token exchange response headers: %v\n", resp.Header)
-	}
+	log.Debug("Token exchange response status: %d", resp.StatusCode)
+	log.Debug("Token exchange response headers: %v", resp.Header)
 
 	// Handle token exchange errors
 	if resp.StatusCode != http.StatusOK {
@@ -771,25 +703,23 @@ func exchangeCodeForTokens(ctx context.Context, settings *config.Settings, code,
 		body := make([]byte, 4096) // Increased buffer size
 		n, readErr := resp.Body.Read(body)
 		if readErr != nil && readErr != io.EOF {
-			fmt.Fprintf(os.Stderr, "Failed to read error response body: %v\n", readErr)
+			log.Error("Failed to read error response body: %v", readErr)
 		}
 		errorBody := string(body[:n])
-		fmt.Fprintf(os.Stderr, "Token exchange error response (status %d): %s\n", resp.StatusCode, errorBody)
+		log.Error("Token exchange error response (status %d): %s", resp.StatusCode, errorBody)
 		return &TokenResponse{OK: false, Error: fmt.Sprintf("HTTP %d: %s", resp.StatusCode, errorBody)}, nil
 	}
 
 	// Parse the successful token response
 	var tokenResp TokenResponse
 	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to decode token response: %v\n", err)
+		log.Error("Failed to decode token response: %v", err)
 		return nil, err
 	}
 
 	tokenResp.OK = true
-	if debug.LOG {
-		fmt.Fprintf(os.Stdout, "Token exchange successful - access_token: %s, id_token: %s\n",
-			tokenResp.AccessToken[:10]+"...", tokenResp.IDToken[:10]+"...")
-	}
+	log.Debug("Token exchange successful - access_token: %s, id_token: %s",
+		tokenResp.AccessToken[:10]+"...", tokenResp.IDToken[:10]+"...")
 	return &tokenResp, nil
 }
 

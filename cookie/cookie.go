@@ -1,17 +1,14 @@
 package cookie
 
 import (
-	"fmt"
 	"os"
 	"strings"
 	"time"
 
+	"compute-go-auth/log"
+
 	"github.com/fastly/compute-sdk-go/fsthttp"
 )
-
-// DEBUG_LOG controls whether debug logging is enabled
-// Set to true to see detailed cookie parsing and setting logs
-const DEBUG_LOG = false
 
 // Cookies represents the OAuth 2.0 cookies used throughout the authentication flow
 // These cookies store sensitive authentication data and must be handled securely
@@ -27,23 +24,17 @@ type Cookies struct {
 // and extracts OAuth-related cookies for authentication
 func Parse(cookieHeader string) *Cookies {
 	// Debug logging for cookie parsing
-	if DEBUG_LOG {
-		fmt.Fprintf(os.Stdout, "Parsing cookies from header: %s\n", cookieHeader)
-	}
+	log.Debug("Parsing cookies from header: %s", cookieHeader)
 
 	// Return empty cookies if no cookie header is present
 	if cookieHeader == "" {
-		if DEBUG_LOG {
-			fmt.Fprintln(os.Stdout, "No cookie header found")
-		}
+		log.Debug("No cookie header found")
 		return &Cookies{}
 	}
 
 	cookies := &Cookies{}
 	prefix := getPrefix()
-	if DEBUG_LOG {
-		fmt.Fprintf(os.Stdout, "Using cookie prefix: %s\n", prefix)
-	}
+	log.Debug("Using cookie prefix: %s", prefix)
 
 	// Parse the cookie header manually by splitting on semicolons
 	// This handles cookies that may contain commas in their values
@@ -63,16 +54,12 @@ func Parse(cookieHeader string) *Cookies {
 		name := parts[0]
 		value := parts[1]
 
-		if DEBUG_LOG {
-			fmt.Fprintf(os.Stdout, "Found cookie: %s=%s\n", name, value)
-		}
+		log.Debug("Found cookie: %s=%s", name, value)
 
 		// In production, only process cookies with the correct prefix
 		// This prevents cookie confusion attacks and ensures security
 		if prefix != "" && !strings.HasPrefix(name, prefix) {
-			if DEBUG_LOG {
-				fmt.Fprintf(os.Stdout, "Skipping cookie %s (doesn't match prefix %s)\n", name, prefix)
-			}
+			log.Debug("Skipping cookie %s (doesn't match prefix %s)", name, prefix)
 			continue
 		}
 
@@ -80,40 +67,28 @@ func Parse(cookieHeader string) *Cookies {
 		// This allows the same code to work in both local and production
 		if prefix != "" && strings.HasPrefix(name, prefix) {
 			name = name[len(prefix):]
-			if DEBUG_LOG {
-				fmt.Fprintf(os.Stdout, "Removed prefix, cookie name: %s\n", name)
-			}
+			log.Debug("Removed prefix, cookie name: %s", name)
 		}
 
 		// Map cookie names to their corresponding fields
 		switch name {
 		case "access_token":
 			cookies.AccessToken = value
-			if DEBUG_LOG {
-				fmt.Fprintf(os.Stdout, "Set access_token: %s\n", value)
-			}
+			log.Debug("Set access_token: %s", value)
 		case "id_token":
 			cookies.IDToken = value
-			if DEBUG_LOG {
-				fmt.Fprintf(os.Stdout, "Set id_token: %s\n", value)
-			}
+			log.Debug("Set id_token: %s", value)
 		case "code_verifier":
 			cookies.CodeVerifier = value
-			if DEBUG_LOG {
-				fmt.Fprintf(os.Stdout, "Set code_verifier: %s\n", value)
-			}
+			log.Debug("Set code_verifier: %s", value)
 		case "state":
 			cookies.State = value
-			if DEBUG_LOG {
-				fmt.Fprintf(os.Stdout, "Set state: %s\n", value)
-			}
+			log.Debug("Set state: %s", value)
 		}
 	}
 
-	if DEBUG_LOG {
-		fmt.Fprintf(os.Stdout, "Final parsed cookies: state=%s, code_verifier=%s\n",
-			cookies.State, cookies.CodeVerifier)
-	}
+	log.Debug("Final parsed cookies: state=%s, code_verifier=%s",
+		cookies.State, cookies.CodeVerifier)
 	return cookies
 }
 
@@ -142,10 +117,8 @@ func SetCookie(w fsthttp.ResponseWriter, name, value string, maxAge int) {
 	}
 
 	// Debug logging for cookie setting
-	if DEBUG_LOG {
-		fmt.Fprintf(os.Stdout, "Setting cookie: %s=%s (prefix=%s, secure=%t, maxAge=%d)\n",
-			cookieName, value, prefix, isSecure(), maxAge)
-	}
+	log.Debug("Setting cookie: %s=%s (prefix=%s, secure=%t, maxAge=%d)",
+		cookieName, value, prefix, isSecure(), maxAge)
 
 	// Add the cookie to the response headers
 	fsthttp.SetCookie(w.Header(), cookie)
