@@ -111,7 +111,7 @@ Run `fastly compute serve --watch` to watch for changes.
 
 ### Debug Logging
 
-Set `debug.LOG = true` in `main.go` to enable detailed debug output.
+Set `log.DebugEnabled = true` in `main.go` to enable detailed debug output.
 
 ---
 
@@ -120,8 +120,8 @@ Set `debug.LOG = true` in `main.go` to enable detailed debug output.
 ```
 compute-go-auth/
 ├── main.go                 # Main application entry point with all OAuth logic
-├── debug/
-│   └── debug.go            # Debug logging control
+├── log/
+│   └── log.go              # Simple logging package
 ├── config/
 │   └── config.go           # Configuration loading from Fastly stores
 ├── cookie/
